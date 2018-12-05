@@ -145,10 +145,10 @@ class SetVcardDatabaseUID implements IRepairStep {
 	}
 
 	public function run(IOutput $output) {
-		// if ($this->shouldRun()) {
+		if ($this->shouldRun()) {
 			$count = $this->repair($output);
 
 			$output->info('Fixed ' . $count . ' vcards');
-		// }
+		}
 	}
 }
