@@ -25,6 +25,7 @@ namespace OC\Repair\NC15;
 
 use OCP\IConfig;
 use OCP\IDBConnection;
+use OCP\ILogger;
 use OCP\Migration\IOutput;
 use OCP\Migration\IRepairStep;
 use Sabre\VObject\Reader;
@@ -38,11 +39,18 @@ class SetVcardDatabaseUID implements IRepairStep {
 	/** @var IConfig */
 	private $config;
 
+	/** @var ILogger */
+	private $logger;
+
+	/** @var IOutput */
+	private $output;
+
 	private $updateQuery;
 
-	public function __construct(IDBConnection $connection, IConfig $config) {
+	public function __construct(IDBConnection $connection, IConfig $config, ILogger $logger) {
 		$this->connection = $connection;
 		$this->config     = $config;
+		$this->logger     = $logger;
 	}
 
 	public function getName() {
@@ -78,10 +86,16 @@ class SetVcardDatabaseUID implements IRepairStep {
 	 * @return string the uid or empty if none
 	 */
 	private function getUID(string $cardData): string {
-		$vCard = Reader::read($cardData);
-		if ($vCard->UID) {
-			$uid = $vCard->UID->getValue();
-			return $uid;
+		try {
+			$vCard = Reader::read($cardData, Reader::OPTION_FORGIVING);
+			if ($vCard->UID) {
+				$uid = $vCard->UID->getValue();
+
+				return $uid;
+			}
+		} catch (\Exception $e) {
+			$this->output->warning('One vCard is broken. We logged the exception and will continue the repair.');
+			$this->logger->logException($e);
 		}
 
 		return '';
@@ -132,6 +146,7 @@ class SetVcardDatabaseUID implements IRepairStep {
 	}
 
 	public function run(IOutput $output) {
+		$this->output = $output;
 		if ($this->shouldRun()) {
 			$count = $this->repair();
 
