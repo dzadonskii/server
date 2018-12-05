@@ -29,6 +29,7 @@ use OCP\ILogger;
 use OCP\Migration\IOutput;
 use OCP\Migration\IRepairStep;
 use Sabre\VObject\Reader;
+use Sabre\VObject\ParseException;
 
 class SetVcardDatabaseUID implements IRepairStep {
 	const MAX_ROWS = 1000;
@@ -41,9 +42,6 @@ class SetVcardDatabaseUID implements IRepairStep {
 
 	/** @var ILogger */
 	private $logger;
-
-	/** @var IOutput */
-	private $output;
 
 	private $updateQuery;
 
@@ -83,18 +81,19 @@ class SetVcardDatabaseUID implements IRepairStep {
 	 * Extract UID from vcard
 	 *
 	 * @param string $cardData the vcard raw data
+	 * @param IOutput $output the output logger
 	 * @return string the uid or empty if none
 	 */
-	private function getUID(string $cardData): string {
+	private function getUID(string $cardData, IOutput $output): string {
 		try {
-			$vCard = Reader::read($cardData, Reader::OPTION_FORGIVING);
+			$vCard = Reader::read($cardData);
 			if ($vCard->UID) {
 				$uid = $vCard->UID->getValue();
 
 				return $uid;
 			}
-		} catch (\Exception $e) {
-			$this->output->warning('One vCard is broken. We logged the exception and will continue the repair.');
+		} catch (ParseException $e) {
+			$output->warning('One vCard is broken. We logged the exception and will continue the repair.');
 			$this->logger->logException($e);
 		}
 
@@ -120,7 +119,7 @@ class SetVcardDatabaseUID implements IRepairStep {
 		$this->updateQuery->execute();
 	}
 
-	private function repair(): int {
+	private function repair(IOutput $output): int {
 		$this->connection->beginTransaction();
 		$entries = $this->getInvalidEntries();
 		$count   = 0;
@@ -130,7 +129,7 @@ class SetVcardDatabaseUID implements IRepairStep {
 			if (is_resource($cardData)) {
 				$cardData = stream_get_contents($cardData);
 			}
-			$uid = $this->getUID($cardData);
+			$uid = $this->getUID($cardData, $output);
 			$this->update($entry['id'], $uid);
 		}
 		$this->connection->commit();
@@ -146,11 +145,10 @@ class SetVcardDatabaseUID implements IRepairStep {
 	}
 
 	public function run(IOutput $output) {
-		$this->output = $output;
-		if ($this->shouldRun()) {
-			$count = $this->repair();
+		// if ($this->shouldRun()) {
+			$count = $this->repair($output);
 
 			$output->info('Fixed ' . $count . ' vcards');
-		}
+		// }
 	}
 }
